@@ -1,0 +1,323 @@
+openapi: 3.0.3
+info:
+  title: Climate Change Explorer API
+  description: |
+    Air Quality Monitoring and Climate Data API providing real-time environmental data,
+    historical temperature trends, snow/frost statistics, and reverse geocoding services.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+  - url: http://188.245.105.237:8000
+    description: External Weather API server
+
+tags:
+  - name: Temperature
+    description: Temperature data and statistics
+  - name: Geocoding
+    description: Location and geocoding services
+
+paths:
+  /api/v1/temperature-summary:
+    get:
+      tags:
+        - Temperature
+      summary: Get temperature summary for a location
+      description: |
+        Returns current temperature, earliest recorded temperature, and temperature
+        difference from historical average for the specified coordinates.
+      operationId: getTemperatureSummary
+      parameters:
+        - name: lat
+          in: query
+          description: Latitude coordinate
+          required: true
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+          example: 33.0
+        - name: lng
+          in: query
+          description: Longitude coordinate
+          required: true
+          schema:
+            type: number
+            format: double
+            minimum: -180
+            maximum: 180
+          example: -87.0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemperatureSummary'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/temperature-graph:
+    get:
+      tags:
+        - Temperature
+      summary: Get historical temperature data by year
+      description: |
+        Returns an array of average mean temperatures for each year in the
+        historical record for the specified coordinates.
+      operationId: getTemperatureGraph
+      parameters:
+        - name: lat
+          in: query
+          description: Latitude coordinate
+          required: true
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+          example: 33.0
+        - name: lng
+          in: query
+          description: Longitude coordinate
+          required: true
+          schema:
+            type: number
+            format: double
+            minimum: -180
+            maximum: 180
+          example: -87.0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TemperatureByYear'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  /api/v1/reverse-geocode:
+    get:
+      tags:
+        - Geocoding
+      summary: Reverse geocode coordinates to location name
+      description: |
+        Converts latitude and longitude coordinates into human-readable
+        location information including city, state, and country.
+      operationId: reverseGeocode
+      parameters:
+        - name: lat
+          in: query
+          description: Latitude coordinate
+          required: true
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+          example: 33.0
+        - name: lng
+          in: query
+          description: Longitude coordinate
+          required: true
+          schema:
+            type: number
+            format: double
+            minimum: -180
+            maximum: 180
+          example: -87.0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeocodingResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Location not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    TemperatureSummary:
+      type: object
+      description: Summary of current and historical temperature data for a location
+      required:
+        - current_temperature
+        - earliest_temperature
+        - temperature_difference
+        - updated_at
+      properties:
+        current_temperature:
+          type: number
+          format: double
+          description: TemperatureByYear by year for the latest year
+          example: 22.5
+        earliest_temperature:
+          type: number
+          format: double
+          description: TemperatureByYear by year for the earliest year
+          example: 18.3
+        temperature_difference:
+          type: number
+          format: double
+          description: Difference between current and earliest temperature in degrees Celsius
+          example: 2.1
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the data was last updated
+          example: "2025-10-08T12:34:56.789Z"
+
+    TemperatureByYear:
+      type: object
+      description: Average temperature data for a specific year
+      required:
+        - avg_mean_temperature
+        - year
+      properties:
+        avg_mean_temperature:
+          type: number
+          format: double
+          description: Average mean temperature for the year in degrees Celsius
+          example: 21.8
+        year:
+          type: integer
+          format: int32
+          description: Year of measurement
+          minimum: 1800
+          maximum: 2100
+          example: 2023
+
+    GeocodingResponse:
+      type: object
+      description: Location information derived from coordinates, available in English
+      required:
+        - city
+        - state
+        - country
+      properties:
+        city:
+          type: string
+          description: City name or similaradministrative region name
+          example: "Hong Kong"
+          minLength: 1
+          maxLength: 200
+        state:
+          type: string
+          description: State or province name or similar administrative region name
+          example: "British Columbia"
+          minLength: 1
+          maxLength: 200
+        country:
+          type: string
+          description: Country name
+          example: "United States"
+          minLength: 1
+          maxLength: 200
+
+    Error:
+      type: object
+      description: Standard error response
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid coordinates provided"
+        code:
+          type: string
+          description: Machine-readable error code
+          example: "INVALID_PARAMETERS"
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+
+  parameters:
+    LatitudeParam:
+      name: lat
+      in: query
+      description: Latitude coordinate
+      required: true
+      schema:
+        type: number
+        format: double
+        minimum: -90
+        maximum: 90
+
+    LongitudeParam:
+      name: lng
+      in: query
+      description: Longitude coordinate
+      required: true
+      schema:
+        type: number
+        format: double
+        minimum: -180
+        maximum: 180
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
