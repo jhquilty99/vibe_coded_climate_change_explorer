@@ -1,0 +1,123 @@
+name: CD
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+  HETZNER_USER: ${{ secrets.HETZNER_USER }}
+  HETZNER_PORT: ${{ secrets.HETZNER_PORT || '22' }}
+  APP_DIR: /opt/climate-change-explorer
+  SERVICE_NAME: climate-change-explorer
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ secrets.HETZNER_SSH_KEY }}
+
+    - name: Add server to known hosts
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Create deployment directory
+      run: |
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+          sudo mkdir -p ${{ env.APP_DIR }}
+          sudo chown ${{ env.HETZNER_USER }}:${{ env.HETZNER_USER }} ${{ env.APP_DIR }}
+        "
+
+    - name: Copy application files
+      run: |
+        rsync -avz --delete \
+          -e "ssh -p ${{ env.HETZNER_PORT }}" \
+          --exclude='.git' \
+          --exclude='.github' \
+          --exclude='__pycache__' \
+          --exclude='*.pyc' \
+          --exclude='.pytest_cache' \
+          --exclude='.mypy_cache' \
+          --exclude='.ruff_cache' \
+          --exclude='htmlcov' \
+          --exclude='.coverage' \
+          --exclude='.venv' \
+          --exclude='node_modules' \
+          --exclude='*.egg-info' \
+          --exclude='dist' \
+          --exclude='build' \
+          ./ ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:${{ env.APP_DIR }}/
+
+    - name: Build Docker image
+      run: |
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+          cd ${{ env.APP_DIR }}
+
+          # Stop existing containers
+          docker ps -aq | xargs docker stop | xargs docker rm
+
+          # Build and start the application
+          sudo docker compose -f deployment/docker-compose.prod.yml up --build -d
+        "
+
+    - name: Wait for container to start
+      run: |
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+          cd ${{ env.APP_DIR }}
+
+          # Wait for container to be healthy
+          timeout 60 bash -c 'until sudo docker compose -f deployment/docker-compose.prod.yml ps --services --filter \"status=running\" | grep -q climate-api; do sleep 2; done'
+
+          # Show container status
+          sudo docker compose -f deployment/docker-compose.prod.yml ps
+        "
+
+    - name: Health check
+      run: |
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+          curl -f http://localhost:8000/health || exit 1
+          echo 'Health check passed!'
+        "
+
+    - name: Configure firewall (if needed)
+      run: |
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+          sudo ufw allow 8000/tcp || true
+          sudo ufw allow 80/tcp || true
+          sudo ufw allow 443/tcp || true
+          sudo ufw --force enable || true
+        "
+
+    - name: Show deployment status
+      run: |
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+          cd ${{ env.APP_DIR }}
+
+          echo '=== Container Status ==='
+          sudo docker compose -f deployment/docker-compose.prod.yml ps
+          echo '=== Container Logs (last 20 lines) ==='
+          sudo docker compose -f deployment/docker-compose.prod.yml logs --tail=20
+          echo '=== Port Status ==='
+          sudo netstat -tlnp | grep -E ':(80|443|8000)' || echo 'Ports not listening'
+          echo '=== Docker System Info ==='
+          sudo docker system df
+        "
+
+    - name: Deployment Summary
+      run: |
+        echo "🚀 Docker deployment completed successfully!"
+        echo "📍 Server: ${{ env.HETZNER_HOST }}"
+        echo "🐳 Container: climate-change-explorer-api"
+        echo "🔗 API URL: http://${{ env.HETZNER_HOST }}:8000"
+        echo "🌐 Web URL: http://${{ env.HETZNER_HOST }}"
+        echo "📚 API Docs: http://${{ env.HETZNER_HOST }}:8000/docs"
+        echo "❤️  Health Check: http://${{ env.HETZNER_HOST }}:8000/health"
