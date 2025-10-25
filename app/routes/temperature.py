@@ -1,10 +1,55 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import List
+from typing import List, Dict, Any
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.models import TemperatureSummary, TemperatureByYear, ErrorResponse
+import asyncio
 
 router = APIRouter(prefix="/api/v1", tags=["Temperature"])
+
+# Cache for storing API responses
+_cache = {}
+_cache_duration = timedelta(minutes=5)
+
+
+async def get_temperature_data_cached(lat: float, lng: float) -> Dict[str, Any]:
+    """
+    Fetch temperature data from Open-Meteo API with caching.
+    Returns cached data if available and not expired, otherwise fetches fresh data.
+    """
+    # Create cache key based on coordinates (rounded to reasonable precision)
+    cache_key = f"{round(lat, 4)}_{round(lng, 4)}"
+    
+    # Check if we have valid cached data
+    if cache_key in _cache:
+        cached_data, cached_time = _cache[cache_key]
+        if datetime.now() - cached_time < _cache_duration:
+            return cached_data
+    
+    # Fetch fresh data from API
+    current_year = datetime.now().year
+    last_year = current_year - 1
+    start_date = "1940-01-01"
+    end_date = f"{last_year}-12-31"
+    
+    url = "https://archive-api.open-meteo.com/v1/archive"
+    params = {
+        "latitude": lat,
+        "longitude": lng,
+        "start_date": start_date,
+        "end_date": end_date,
+        "daily": "temperature_2m_mean"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+    
+    # Store in cache
+    _cache[cache_key] = (data, datetime.now())
+    
+    return data
 
 
 @router.get("/temperature-summary", response_model=TemperatureSummary)
@@ -17,25 +62,8 @@ async def get_temperature_summary(
     difference from historical average for the specified coordinates.
     """
     try:
-        # Get historical data from 1940 to last year
-        current_year = datetime.now().year
-        last_year = current_year - 1
-        start_date = "1940-01-01"
-        end_date = f"{last_year}-12-31"
-        
-        url = "https://archive-api.open-meteo.com/v1/archive"
-        params = {
-            "latitude": lat,
-            "longitude": lng,
-            "start_date": start_date,
-            "end_date": end_date,
-            "daily": "temperature_2m_mean"
-        }
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+        # Get historical data using cached function
+        data = await get_temperature_data_cached(lat, lng)
         
         # Process the data to calculate yearly averages
         daily_data = data.get("daily", {})
@@ -111,25 +139,8 @@ async def get_temperature_graph(
     historical record for the specified coordinates.
     """
     try:
-        # Get historical data from 1940 to last year
-        current_year = datetime.now().year
-        last_year = current_year - 1
-        start_date = "1940-01-01"
-        end_date = f"{last_year}-12-31"
-        
-        url = "https://archive-api.open-meteo.com/v1/archive"
-        params = {
-            "latitude": lat,
-            "longitude": lng,
-            "start_date": start_date,
-            "end_date": end_date,
-            "daily": "temperature_2m_mean"
-        }
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+        # Get historical data using cached function
+        data = await get_temperature_data_cached(lat, lng)
         
         # Process the data to calculate yearly averages
         daily_data = data.get("daily", {})

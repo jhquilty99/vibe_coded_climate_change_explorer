@@ -37,16 +37,16 @@ class TemperatureByYear(BaseModel):
 
 class GeocodingResponse(BaseModel):
     """Location information derived from coordinates"""
-    city: str = Field(..., min_length=1, max_length=200, description="City name or similar administrative region name")
-    state: str = Field(..., min_length=1, max_length=200, description="State or province name or similar administrative region name")
-    country: str = Field(..., min_length=1, max_length=200, description="Country name")
+    admin_level_high: Optional[str] = Field(None, description="Admin level 10, 11, or 12 (city/town level)")
+    admin_level_mid: Optional[str] = Field(None, description="Admin level 5, 6, 7, 8, or 9 (county/state/province level)")
+    admin_level_low: Optional[str] = Field(None, description="Admin level 3 (country/region level)")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "city": "Hong Kong",
-                "state": "British Columbia",
-                "country": "United States"
+                "admin_level_high": "Ullensaker",
+                "admin_level_mid": "Akershus",
+                "admin_level_low": "Norway"
             }
         }
 

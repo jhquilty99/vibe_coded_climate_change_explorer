@@ -11,7 +11,7 @@ app = FastAPI(
     """,
     version="1.0.0",
     servers=[
-        {"url": "http://localhost:5000", "description": "Local development server"},
+        {"url": "http://localhost:8000", "description": "Local development server"},
         {"url": "http://188.245.105.237:8000", "description": "External Weather API server"}
     ]
 )
@@ -61,5 +61,5 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 

@@ -11,8 +11,9 @@ async def reverse_geocode(
     lng: float = Query(..., ge=-180, le=180, description="Longitude coordinate")
 ):
     """
-    Converts latitude and longitude coordinates into human-readable
-    location information including city, state, and country.
+    Converts latitude and longitude coordinates into administrative level
+    information using OpenStreetMap's geocodejson format.
+    Returns admin levels: high (10-12), mid (5-9), and low (3).
     """
     try:
         url = "https://nominatim.openstreetmap.org/reverse"
@@ -20,7 +21,7 @@ async def reverse_geocode(
             "lat": lat,
             "lon": lng,
             "zoom": 18,
-            "format": "jsonv2"
+            "format": "geocodejson"
         }
         
         headers = {
@@ -35,43 +36,55 @@ async def reverse_geocode(
         
         # Check if error in response
         if "error" in data:
+            return GeocodingResponse(
+                admin_level_high="Ocean",
+                admin_level_mid="Ocean",
+                admin_level_low="Ocean"
+            )
+        
+        # Extract features from geocodejson response
+        features = data.get("features", [])
+        if not features:
             raise HTTPException(
                 status_code=404,
                 detail={"message": "Location not found for the given coordinates", "code": "LOCATION_NOT_FOUND"}
             )
         
-        # Extract address information
-        address = data.get("address", {})
+        # Get the first feature (most relevant result)
+        feature = features[0]
+        properties = feature.get("properties", {})
+        geocoding = properties.get("geocoding", {})
+        admin = geocoding.get("admin", {})
+
+        admin_level_low = geocoding.get("country", "Unknown")
         
-        # Try to get city from various possible fields
-        city = (
-            address.get("city") or
-            address.get("town") or
-            address.get("village") or
-            address.get("municipality") or
-            address.get("city_district") or
-            address.get("suburb") or
-            address.get("hamlet") or
-            "Unknown"
-        )
+        # Extract admin levels based on the mapping:
+        # admin_level_high: level 9 or 10 (city/town level)
+        # admin_level_mid: level 5, 6, 7, or 8 (county/state/province level)  
+        # admin_level_low: level 3 or 4 (country/region level)
         
-        # Try to get state from various possible fields
-        state = (
-            address.get("state") or
-            address.get("province") or
-            address.get("region") or
-            address.get("county") or
-            address.get("state_district") or
-            "Unknown"
-        )
+        admin_level_high = "Unknown"
+        admin_level_mid = "Unknown"
         
-        # Get country
-        country = address.get("country", "Unknown")
+        # Find admin_level_high (city/town) from levels 9-10
+        for level in [9, 8, 7, 6]:
+            level_key = f"level{level}"
+            if level_key in admin and admin[level_key]:
+                admin_level_high = admin[level_key]
+                
+        # Find admin_level_mid (county/state) from levels 5-8
+        for level in [5, 4]:
+            level_key = f"level{level}"
+            if level_key in admin and admin[level_key]:
+                admin_level_mid = admin[level_key]
+
+        if admin_level_high == "Unknown":
+            admin_level_high = admin_level_mid
         
         return GeocodingResponse(
-            city=city,
-            state=state,
-            country=country
+            admin_level_high=admin_level_high,
+            admin_level_mid=admin_level_mid,
+            admin_level_low=admin_level_low
         )
         
     except httpx.HTTPError as e:
