@@ -25,14 +25,16 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.HETZNER_SSH_KEY }}
 
-    - name: Add server to known hosts
+    - name: Add server to known hosts and setup SSH key
       run: |
         mkdir -p ~/.ssh
+        echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner_ssh
+        chmod 600 ~/.ssh/hetzner_ssh
         ssh-keyscan -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_HOST }} >> ~/.ssh/known_hosts
 
     - name: Create deployment directory
       run: |
-        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} -i ~/.ssh/hetzner_ssh "
           sudo mkdir -p ${{ env.APP_DIR }}
           sudo chown ${{ env.HETZNER_USER }}:${{ env.HETZNER_USER }} ${{ env.APP_DIR }}
         "
