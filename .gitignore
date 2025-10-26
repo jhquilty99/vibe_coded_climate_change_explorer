@@ -19,6 +19,9 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.grib
+*.zarr
+*.idx
 
 # Virtual Environment
 venv/

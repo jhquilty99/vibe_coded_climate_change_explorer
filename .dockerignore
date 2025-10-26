@@ -1,0 +1,33 @@
+# Exclude the large zarr data directory - it will be mounted as a volume
+external_data/era5_temperature_1940_2024.zarr/
+
+# Exclude venv and Python cache
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Exclude test and development files
+*.md
+test_api.py
+pytest.ini
+development_process/
+
+# Exclude git files
+.git/
+.gitignore
+
