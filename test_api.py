@@ -137,15 +137,16 @@ async def test_reverse_geocode(api_client, coord, expected_high, expected_mid, e
         print(f"  Low (3-4): {data['admin_level_low']} ✓")
 
 
+# Ground tryth from era-explorer here: https://era-explorer.climate.copernicus.eu/
 @pytest.mark.asyncio
 @pytest.mark.parametrize("coord,expected_earliest_temp", [
-    (TEST_COORDINATES[0], 10.48),  # NYC
-    (TEST_COORDINATES[1], 10.04),  # London
-    (TEST_COORDINATES[2], 13.90),  # Tokyo
-    (TEST_COORDINATES[3], 24.60),  # Tibesti Est
-    (TEST_COORDINATES[4], 1.18),  # Chelyabinsk
-    (TEST_COORDINATES[5], -4.64),  # Yukon
-    (TEST_COORDINATES[6], 0.23),  # Ocean
+    (TEST_COORDINATES[0], 10.6),  # NYC
+    (TEST_COORDINATES[1], 9.7),  # London
+    (TEST_COORDINATES[2], 14.2),  # Tokyo
+    (TEST_COORDINATES[3], 25.0),  # Tibesti Est
+    (TEST_COORDINATES[4], 1.4),  # Chelyabinsk
+    (TEST_COORDINATES[5], -7.3),  # Yukon
+    (TEST_COORDINATES[6], 0.2),  # Ocean
 ])
 async def test_temperature_summary(api_client, coord, expected_earliest_temp):
     """Test temperature summary part of the new /temperature endpoint with different coordinates and validate earliest temperature values"""
@@ -279,11 +280,13 @@ async def test_1940_temperature_consistency(api_client, coord):
         )
 
 
+# Ground tryth from era-explorer here: https://era-explorer.climate.copernicus.eu/, and asking 
+# gemini to give me the slope and intercept for the regression line.
 @pytest.mark.asyncio
 @pytest.mark.parametrize("coord,expected_slope,expected_intercept", [
-    (TEST_COORDINATES[0], 0.01370, -15.70932),  # New York
-    (TEST_COORDINATES[1], 0.01672, -22.81),     # London
-    (TEST_COORDINATES[2], 0.01681, -18.9),      # Tokyo
+    (TEST_COORDINATES[0], 0.0199, -27.376), 
+    (TEST_COORDINATES[1], 0.0210, -31.370), 
+    (TEST_COORDINATES[2], 0.0256, -35.335),  
 ])
 async def test_temperature_regression_line(api_client, coord, expected_slope, expected_intercept):
     """Test temperature regression line (slope and intercept) for the first three locations with 10% margin of error"""

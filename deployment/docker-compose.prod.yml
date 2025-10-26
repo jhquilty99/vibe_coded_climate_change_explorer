@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     build:
@@ -11,6 +9,8 @@ services:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
     container_name: climate-api
+    volumes:
+      - ../external_data/era5_temperature_1940_2024.zarr:/app/external_data/era5_temperature_1940_2024.zarr:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

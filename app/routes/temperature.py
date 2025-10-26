@@ -1,23 +1,21 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import List, Dict, Any, Tuple, Optional
-import httpx
+from typing import Any, Tuple, Optional, List
 from datetime import datetime, timedelta
-from app.models import TemperatureSummary, TemperatureByYear, TemperatureData, TemperatureTrend, ErrorResponse
-import asyncio
-import math
-from functools import lru_cache
+from app.models import TemperatureSummary, TemperatureByYear, TemperatureData, TemperatureTrend
+from external_data.utils.query_era5 import query_era5
 from collections import OrderedDict, defaultdict
+import pandas as pd
 
 router = APIRouter(prefix="/api/v1", tags=["Temperature"])
 
 # LRU Cache for storing API responses with bounded memory
 class LRUCache:
-    def __init__(self, max_size: int = 100, ttl: timedelta = timedelta(minutes=5)):
+    def __init__(self, max_size: int = 100, ttl: timedelta = timedelta(minutes=60)):
         self.max_size = max_size
         self.ttl = ttl
         self._cache = OrderedDict()
     
-    def get(self, key: str) -> Optional[Tuple[Dict[str, Any], datetime]]:
+    def get(self, key: str) -> Optional[Tuple[Any, datetime]]:
         if key not in self._cache:
             return None
         
@@ -30,7 +28,7 @@ class LRUCache:
         self._cache.move_to_end(key)
         return (data, timestamp)
     
-    def set(self, key: str, value: Dict[str, Any], timestamp: datetime = None):
+    def set(self, key: str, value: Any, timestamp: datetime = None):
         if timestamp is None:
             timestamp = datetime.now()
         
@@ -46,60 +44,16 @@ class LRUCache:
     def clear(self):
         self._cache.clear()
 
-_cache = LRUCache(max_size=200, ttl=timedelta(minutes=5))
-
-# Persistent HTTP client with connection pooling for better performance
-_http_client: Optional[httpx.AsyncClient] = None
+_cache = LRUCache(max_size=200, ttl=timedelta(minutes=60))
 
 
-def get_http_client() -> httpx.AsyncClient:
-    """Get or create persistent HTTP client with optimized settings."""
-    global _http_client
-    if _http_client is None:
-        _http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(15.0, connect=5.0),
-            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
-        )
-    return _http_client
-
-
-async def close_http_client():
-    """Close the persistent HTTP client."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
-
-
-async def get_temperature_data_with_retry(url: str, params: dict, max_retries: int = 3) -> Dict[str, Any]:
+def get_temperature_data_cached(lat: float, lng: float) -> pd.DataFrame:
     """
-    Fetch data from API with exponential backoff retry logic.
-    Uses persistent HTTP client for better connection pooling.
-    """
-    last_exception = None
-    client = get_http_client()
-    
-    for attempt in range(max_retries):
-        try:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError as e:
-            last_exception = e
-            if attempt < max_retries - 1:
-                # Exponential backoff: 1s, 2s, 4s
-                wait_time = 2 ** attempt
-                await asyncio.sleep(wait_time)
-            else:
-                raise
-    
-    raise last_exception
-
-
-async def get_temperature_data_cached(lat: float, lng: float) -> Dict[str, Any]:
-    """
-    Fetch temperature data from Open-Meteo API with caching and retry logic.
+    Fetch temperature data from local ERA5 Zarr store with caching.
     Returns cached data if available and not expired, otherwise fetches fresh data.
+    
+    Returns:
+        pandas DataFrame with temperature data indexed by time (converted from Series if needed)
     """
     # Create cache key based on coordinates (rounded to reasonable precision)
     cache_key = f"{round(lat, 4)}_{round(lng, 4)}"
@@ -108,27 +62,17 @@ async def get_temperature_data_cached(lat: float, lng: float) -> Dict[str, Any]:
     cached_result = _cache.get(cache_key)
     if cached_result is not None:
         cached_data, _ = cached_result
-        return cached_data
+        return cached_data.copy()  # Return a copy to avoid cache mutation
     
-    # Fetch fresh data from API
-    current_year = datetime.now().year
-    last_year = current_year - 1
-    start_date = "1940-01-01"
-    end_date = f"{last_year}-12-31"
+    # Fetch fresh data from local ERA5 Zarr store
+    data = query_era5(lat, lng)
     
-    url = "https://archive-api.open-meteo.com/v1/archive"
-    params = {
-        "latitude": lat,
-        "longitude": lng,
-        "start_date": start_date,
-        "end_date": end_date,
-        "daily": "temperature_2m_mean"
-    }
+    # Convert Series to DataFrame if needed (for compatibility with downstream code)
+    if isinstance(data, pd.Series):
+        data = data.to_frame()
     
-    data = await get_temperature_data_with_retry(url, params)
-    
-    # Store in cache
-    _cache.set(cache_key, data)
+    # Store in cache (store a copy to avoid mutations)
+    _cache.set(cache_key, data.copy())
     
     return data
 
@@ -188,38 +132,55 @@ def calculate_linear_regression(years: List[int], temperatures: List[float]) -> 
 
 
 @router.get("/temperature", response_model=TemperatureData)
-async def get_temperature_data(
+def get_temperature_data(
     lat: float = Query(..., ge=-90, le=90, description="Latitude coordinate"),
     lng: float = Query(..., ge=-180, le=180, description="Longitude coordinate")
 ):
     """
     Returns combined temperature data including summary (current, earliest, difference) 
     and yearly breakdown for the specified coordinates.
+    Uses local ERA5 data from Zarr store.
     """
     try:
         # Get historical data using cached function
-        data = await get_temperature_data_cached(lat, lng)
+        df = get_temperature_data_cached(lat, lng)
         
-        # Process the data to calculate yearly averages
-        daily_data = data.get("daily", {})
-        times = daily_data.get("time", [])
-        temperatures = daily_data.get("temperature_2m_mean", [])
-        
-        if not times or not temperatures:
+        # Check if data is available
+        if df.empty:
             raise HTTPException(
                 status_code=500,
                 detail={"message": "No temperature data available for this location", "code": "NO_DATA"}
             )
         
-        # Group by year and calculate averages using defaultdict for efficiency
-        yearly_temps = defaultdict(lambda: [0.0, 0])  # [sum, count] for each year
+        # Data is already in Celsius (converted in query_era5)
+        # Ensure we have a DatetimeIndex
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
         
-        for time_str, temp in zip(times, temperatures):
-            if temp is None:
-                continue
-            year = int(time_str[:4])  # Extract year directly without split for speed
-            yearly_temps[year][0] += temp
-            yearly_temps[year][1] += 1
+        # Extract temperature column (handle both Series and DataFrame)
+        if isinstance(df, pd.Series):
+            temperature_series = df
+        else:
+            temperature_series = df.iloc[:, 0]
+        
+        # For more accurate annual averages, weight each month by its number of days
+        # This accounts for months having different lengths (28-31 days)
+        # Create a dataframe with temperature and day weights
+        df_processed = pd.DataFrame({
+            'temperature_celsius': temperature_series.values,
+            'days_in_month': df.index.to_period('M').to_timestamp(how='end').days_in_month
+        }, index=df.index)
+        df_processed['weighted_temp'] = df_processed['temperature_celsius'] * df_processed['days_in_month']
+        
+        # Group by year and calculate weighted averages
+        yearly_temps = defaultdict(lambda: [0.0, 0])  # [sum_weighted_temp, sum_days]
+        
+        for timestamp, row in df_processed.iterrows():
+            year = timestamp.year
+            weighted_temp = row['weighted_temp']
+            days = row['days_in_month']
+            yearly_temps[year][0] += weighted_temp
+            yearly_temps[year][1] += days
         
         # Calculate average for each year (more efficient)
         yearly_averages = {
@@ -279,11 +240,6 @@ async def get_temperature_data(
             trend=trend
         )
         
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=503,
-            detail={"message": f"External API error: {str(e)}", "code": "EXTERNAL_API_ERROR"}
-        )
     except HTTPException:
         raise
     except Exception as e:
