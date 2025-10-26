@@ -9,8 +9,8 @@ env:
   HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
   HETZNER_USER: ${{ secrets.HETZNER_USER }}
   HETZNER_PORT: ${{ secrets.HETZNER_PORT || '22' }}
-  APP_DIR: /opt/climate-change-explorer
-  SERVICE_NAME: climate-change-explorer
+  APP_DIR: /opt/vibe-coded-climate-change-explorer
+  SERVICE_NAME: vibe-coded-climate-change-explorer
 
 jobs:
   deploy:
