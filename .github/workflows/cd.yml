@@ -57,11 +57,11 @@ jobs:
           --exclude='*.egg-info' \
           --exclude='dist' \
           --exclude='build' \
-          ./ ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:${{ env.APP_DIR }}/
+          ./ ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:${{ env.APP_DIR }}/ -i ~/.ssh/hetzner_ssh
 
     - name: Build Docker image
       run: |
-        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} -i ~/.ssh/hetzner_ssh "
           cd ${{ env.APP_DIR }}
 
           # Stop existing containers
@@ -73,7 +73,7 @@ jobs:
 
     - name: Wait for container to start
       run: |
-        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} -i ~/.ssh/hetzner_ssh "
           cd ${{ env.APP_DIR }}
 
           # Wait for container to be healthy
@@ -85,14 +85,14 @@ jobs:
 
     - name: Health check
       run: |
-        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} -i ~/.ssh/hetzner_ssh "
           curl -f http://localhost:8000/health || exit 1
           echo 'Health check passed!'
         "
 
     - name: Configure firewall (if needed)
       run: |
-        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} -i ~/.ssh/hetzner_ssh "
           sudo ufw allow 8000/tcp || true
           sudo ufw allow 80/tcp || true
           sudo ufw allow 443/tcp || true
@@ -101,7 +101,7 @@ jobs:
 
     - name: Show deployment status
       run: |
-        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "
+        ssh -p ${{ env.HETZNER_PORT }} ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} -i ~/.ssh/hetzner_ssh "
           cd ${{ env.APP_DIR }}
 
           echo '=== Container Status ==='

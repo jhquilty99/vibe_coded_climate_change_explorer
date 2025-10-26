@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -35,6 +35,22 @@ class TemperatureByYear(BaseModel):
         }
 
 
+class TemperatureTrend(BaseModel):
+    """Linear regression trend data for temperature over time"""
+    slope: float = Field(..., description="Slope of the line of best fit (temperature change per year in degrees Celsius)")
+    intercept: float = Field(..., description="Y-intercept of the line of best fit (temperature at year 0)")
+    r_squared: float = Field(..., description="R-squared value indicating goodness of fit (0-1)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "slope": 0.02,
+                "intercept": 15.5,
+                "r_squared": 0.85
+            }
+        }
+
+
 class GeocodingResponse(BaseModel):
     """Location information derived from coordinates"""
     admin_level_high: Optional[str] = Field(None, description="Admin level 10, 11, or 12 (city/town level)")
@@ -47,6 +63,35 @@ class GeocodingResponse(BaseModel):
                 "admin_level_high": "Ullensaker",
                 "admin_level_mid": "Akershus",
                 "admin_level_low": "Norway"
+            }
+        }
+
+
+class TemperatureData(BaseModel):
+    """Combined temperature data including summary, yearly breakdown, and trend analysis"""
+    summary: TemperatureSummary = Field(..., description="Temperature summary with current, earliest, and difference")
+    yearly_data: List[TemperatureByYear] = Field(..., description="Array of average temperatures by year")
+    trend: TemperatureTrend = Field(..., description="Linear regression trend analysis of temperature over time")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "summary": {
+                    "current_temperature": 22.5,
+                    "earliest_temperature": 18.3,
+                    "temperature_difference": 2.1,
+                    "updated_at": "2025-10-08T12:34:56.789Z"
+                },
+                "yearly_data": [
+                    {"year": 1940, "avg_mean_temperature": 18.3},
+                    {"year": 1941, "avg_mean_temperature": 19.1},
+                    {"year": 2023, "avg_mean_temperature": 22.5}
+                ],
+                "trend": {
+                    "slope": 0.02,
+                    "intercept": 15.5,
+                    "r_squared": 0.85
+                }
             }
         }
 
